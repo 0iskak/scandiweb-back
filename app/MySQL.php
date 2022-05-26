@@ -14,7 +14,6 @@ class MySQL extends mysqli
             'scandiweb', 'scandiweb');
     }
 
-
     public static function getInstance(): MySQL
     {
         return self::$instance;
