@@ -12,6 +12,14 @@ class Repo
 
     private ReflectionClass $reflection;
 
+    private const
+        ID = 'SERIAL PRIMARY KEY',
+        INT = 'INT',
+        FLOAT = 'FLOAT',
+        STRING = 'VARCHAR(255)';
+    
+    private const COLUMN_SEPARATOR = ', ';
+
     public function __construct()
     {
         $this->reflection =
@@ -19,52 +27,51 @@ class Repo
 
         $columns = $this->getColumns($this->reflection);
 
-        array_unshift($columns, '`id` SERIAL PRIMARY KEY');
+        array_unshift($columns, '`id` ' . self::ID);
 
-        $children = array_filter(get_declared_classes(),
-            function ($class) {
-                return is_subclass_of($class, Product::class);
-            });
+        $children = Product::getChildren();
         foreach ($children as $child)
-            $columns = array_merge(
-                $columns,
-                $this->getColumns(new ReflectionClass($child))
-            );
+            foreach ($this->getColumns(new ReflectionClass($child))
+                     as $column)
+                $columns[] = $column;
 
         $columns = array_unique($columns);
-        $query = sprintf('CREATE TABLE IF NOT EXISTS `%s` (%s);',
-            $this->reflection->getShortName(),
-            implode(', ', $columns));
 
-        MySQL::getInstance()->query($query);
+        MySQL::getInstance()->createTable(
+            $this->reflection->getShortName(),
+            join(self::COLUMN_SEPARATOR, $columns)
+        );
     }
 
     private function getColumns(
         ReflectionClass $reflection
     ): array
     {
-        $properties = array_filter(
-            $reflection->getProperties(),
-            function ($property) {
-                return str_starts_with($property->getType(), '?');
-            });
+        $properties = [];
 
-        return array_map(function ($property) {
+        foreach ($reflection->getProperties() as $property)
+            if (str_starts_with($property->getType(), '?'))
+                $properties[] = $property;
+
+        for ($i = count($properties) - 1; $i >= 0; $i--) {
+            $property = $properties[$i];
+
             switch (substr($property->getType(), 1)) {
                 case 'int':
-                    $value = 'INT';
+                    $value = self::INT;
                     break;
                 case 'float':
-                    $value = 'FLOAT';
+                    $value = self::FLOAT;
                     break;
                 default:
-                    $value = 'VARCHAR(255)';
+                    $value = self::STRING;
             }
 
-            return sprintf('`%s` %s',
-                $property->getName(),
-                $value);
-        }, $properties);
+            $properties[$i] = sprintf('`%s` %s',
+                $property->getName(), $value);
+        }
+
+        return $properties;
     }
 
     public static function getInstance(): Repo
@@ -79,14 +86,14 @@ class Repo
 
     public function getAll(): array
     {
-        $query = sprintf('SELECT * FROM `%s`;',
-            $this->reflection->getShortName());
+        $products = MySQL::getInstance()->getAll(
+            $this->reflection->getShortName()
+        );
 
-        $result = MySQL::getInstance()->query($query);
+        for ($i = count($products) - 1; $i >= 0; $i--)
+            $products[$i] = $this->createObject($products[$i]);
 
-        return array_map(function ($product) {
-            return $this->createObject($product);
-        }, $result->fetch_all(MYSQLI_ASSOC));
+        return $products;
     }
 
     public function createObject(array $product): Product
@@ -110,32 +117,36 @@ class Repo
     {
         $array = $object->jsonSerialize();
 
-        $query = sprintf('INSERT INTO `%s` (%s) VALUES (%s);',
-            $this->reflection->getShortName(),
-            implode(', ', array_keys($array)),
-            implode(', ', array_map(function ($value) {
-                return $value ? sprintf("'%s'", $value) : 'NULL';
-            }, $array)));
+        $keys = [];
+        $values = [];
 
-        MySQL::getInstance()->query($query);
+        foreach ($array as $key => $value) {
+            $keys[] = $key;
+            $values[] = $value ? sprintf("'%s'", $value) : 'NULL';
+        }
+
+        MySQL::getInstance()->insert(
+            $this->reflection->getShortName(),
+            join(self::COLUMN_SEPARATOR, $keys),
+            join(self::COLUMN_SEPARATOR, $values)
+        );
     }
 
     public function getById(int $id): Product
     {
-        $query = sprintf('SELECT * FROM `%s` WHERE `id` = %d;',
+        $product = MySQL::getInstance()->getById(
             $this->reflection->getShortName(),
-            $id);
+            $id
+        );
 
-        $result = MySQL::getInstance()->query($query);
-        return $this->createObject($result->fetch_assoc());
+        return $this->createObject($product);
     }
 
     public function deleteById(int $id): void
     {
-        $query = sprintf('DELETE FROM `%s` WHERE `id` = %d;',
+        MySQL::getInstance()->deleteById(
             $this->reflection->getShortName(),
-            $id);
-
-        MySQL::getInstance()->query($query);
+            $id
+        );
     }
 }

@@ -19,12 +19,7 @@ abstract class Product implements JsonSerializable
         $this->type = $reflection->getShortName();
     }
 
-    // idk why for example with calling
-    // DVD::jsonSerialize() $this is Product not DVD
-    public function jsonSerialize(): array
-    {
-        return get_object_vars($this);
-    }
+    public abstract function jsonSerialize(): array;
 
     public function getId(): ?int
     {
@@ -64,5 +59,15 @@ abstract class Product implements JsonSerializable
     public function setPrice(?float $price): void
     {
         $this->price = $price;
+    }
+
+    public static function getChildren(): array
+    {
+        $children = [];
+        foreach (get_declared_classes() as $class)
+            if (is_subclass_of($class, Product::class))
+                $children[] = $class;
+
+        return $children;
     }
 }

@@ -13,9 +13,6 @@ class DVD extends Product
 
     public function jsonSerialize(): array
     {
-        return array_merge(
-            parent::jsonSerialize(),
-            get_object_vars($this)
-        );
+        return get_object_vars($this);
     }
 }
